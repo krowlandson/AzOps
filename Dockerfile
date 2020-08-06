@@ -15,7 +15,9 @@ RUN [ "/usr/bin/pwsh", "-Command", "$ProgressPreference = 'SilentlyContinue'; In
 
 COPY . /action
 
-ENV AzOpsMainTemplate='/action/template/template.json'
-ENV AzOpsStateConfig='/action/src/AzOpsStateConfig.json'
+ENV AzOpsMainTemplate='/action/template/template.json' \
+    AzOpsStateConfig='/action/src/AzOpsStateConfig.json' \
+    AZOPS_LOG_TIMESTAMP_PREFERENCE='True' \
+    AZOPS_INVALIDATE_CACHE='True'
 
 ENTRYPOINT ["pwsh", "/action/entrypoint.ps1"]

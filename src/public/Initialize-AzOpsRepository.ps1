@@ -52,8 +52,9 @@ function Initialize-AzOpsRepository {
     # https://github.com/powershell/psscriptanalyzer#suppressing-rules
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsState')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsAzManagementGroup')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialRoot')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSupportPartialMgDiscovery')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialMgDiscoveryRoot')]
+    # [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialRoot')] # No longer used
+    # [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSupportPartialMgDiscovery')] # No longer used
     [CmdletBinding()]
     [OutputType()]
     param(
@@ -82,46 +83,51 @@ function Initialize-AzOpsRepository {
 
     begin {
         Write-AzOpsLog -Level Debug -Topic "Initialize-AzOpsRepository" -Message ("Initiating function " + $MyInvocation.MyCommand + " begin")
-        # Set environment variable InvalidateCache to 1 if switch InvalidateCache switch has been used
-        if ($PSBoundParameters['InvalidateCache']) {
-            $env:AZOPS_INVALIDATE_CACHE = 1
+
+        # Create hashtable from PSBoundParameters for use with Initialize-AzOpsGlobalVariables function
+        $AzOpsGlobalVariablesParams = @{}
+        $AzOpsGlobalVariablesParamFilter = @("InvalidateCache", "GeneralizeTemplates", "ExportRawTemplate")
+        foreach ($Key in $PSBoundParameters.Keys | Where-Object { $_ -in $AzOpsGlobalVariablesParamFilter }) {
+            $AzOpsGlobalVariablesParams.Add($Key, $PSBoundParameters["$Key"])
         }
-        # Set environment variable GeneralizeTemplates to 1 if switch GeneralizeTemplates switch has been used
-        if ($PSBoundParameters['GeneralizeTemplates']) {
-            $env:AZOPS_GENERALIZE_TEMPLATES = 1
-        }
-        # Set environment variable ExportRawTemplate to 1 if switch ExportRawTemplate switch has been used
-        if ($PSBoundParameters['ExportRawTemplate']) {
-            $env:ExportRawTemplate = 1
-        }
+
         # Initialize Global Variables and return error if not set
-        Initialize-AzOpsGlobalVariables
+        Initialize-AzOpsGlobalVariables @AzOpsGlobalVariablesParams
         if (-not (Test-AzOpsVariables)) {
             Write-AzOpsLog -Level Error -Topic "Initialize-AzOpsRepository" -Message "AzOps Global Variables not set."
         }
+
+        # Create AzOpsState folder if not exists
+        if (-not (Test-Path -Path $global:AzOpsState)) {
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsRepository" -Message "Creating AzOpsState folder: $($global:AzOpsState)"
+            New-Item -path $global:AzOpsState -Force -Type directory | Out-Null
+        }
+
         # Get tenant id for current Az Context
         $TenantId = (Get-AzContext).Tenant.Id
         Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsRepository" -Message "Tenant ID: $TenantID"
+
         # Start stopwatch for measuring time
         $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
     }
 
     process {
         Write-AzOpsLog -Level Debug -Topic "Initialize-AzOpsRepository" -Message ("Initiating function " + $MyInvocation.MyCommand + " process")
 
-        #
-        if (1 -eq $global:AzOpsSupportPartialMgDiscovery -and $global:AzOpsPartialRoot) {
-            $RootScope = $AzOpsPartialRoot.id
+        # Set root scope variable using AzOpsPartialMgDiscoveryRoot if provided, otherwise default to "Tenant Root Group" by using TenantId
+        if ($global:AzOpsPartialMgDiscoveryRoot) {
+            $RootMgName = $global:AzOpsPartialMgDiscoveryRoot
         }
         else {
-            $RootScope = '/providers/Microsoft.Management/managementGroups/{0}' -f $TenantId
+            $RootMgName = $TenantId
         }
-
-        Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsRepository" -Message "Tenant root Management Group is: $TenantID"
+        $RootScope = "/providers/Microsoft.Management/managementGroups/{0}" -f $RootMgName
+        Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsRepository" -Message "Root Management Group for discovery is: $RootScope"
 
         if (Test-Path -Path $global:AzOpsState) {
             #Handle migration from old folder structure by checking for parenthesis pattern
-            $MigrationRequired = (Get-ChildItem -Recurse -Force -Path $global:AzOpsState -File | Where-Object { $_.Name -like "Microsoft.Management-managementGroups_$TenantId.parameters.json" } | Select-Object -ExpandProperty FullName -First 1) -notmatch '\((.*)\)'
+            $MigrationRequired = (Get-ChildItem -Recurse -Force -Path $global:AzOpsState -File | Where-Object { $_.Name -like "Microsoft.Management-managementGroups_$RootMgName.parameters.json" } | Select-Object -ExpandProperty FullName -First 1) -notmatch '\((.*)\)'
             if ($MigrationRequired) {
                 Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsRepository" -Message "Migration from old to new structure required. All artifacts will be lost."
             }
@@ -153,18 +159,16 @@ function Initialize-AzOpsRepository {
         }
 
         # Set AzOpsScope root scope based on tenant root id
-        foreach ($Root in $RootScope) {
-            if (($global:AzOpsAzManagementGroup | Where-Object -FilterScript { $_.Id -eq $Root })) {
+        if (($global:AzOpsAzManagementGroup | Where-Object -FilterScript { $_.Id -eq $RootScope })) {
 
-                # Create AzOpsState Structure recursively
-                Save-AzOpsManagementGroupChildren -scope $Root
+            # Create AzOpsState Structure recursively
+            Save-AzOpsManagementGroupChildren -scope $RootScope
 
-                # Discover Resource at scope recursively
-                Get-AzOpsResourceDefinitionAtScope -scope $Root -SkipPolicy:$SkipPolicy -SkipResourceGroup:$SkipResourceGroup
-            }
-            else {
-                Write-Error "Cannot access root management group $root - verify that principal $((Get-AzContext).Account.Id) has access"
-            }
+            # Discover Resource at scope recursively
+            Get-AzOpsResourceDefinitionAtScope -scope $RootScope -SkipPolicy:$SkipPolicy -SkipResourceGroup:$SkipResourceGroup
+        }
+        else {
+            Write-Error "Cannot access Root Management Group [$RootScope] - verify that principal $((Get-AzContext).Account.Id) has access"
         }
     }
 

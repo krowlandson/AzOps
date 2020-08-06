@@ -76,16 +76,16 @@ jobs:
         else
           sed -i "s/ModuleVersion     = '.*'/ModuleVersion     = '$BRANCH_VERSION'/" src/AzOps.psd1
         fi
-    
+
     - name: Setup Git
       run: |
         git config --global user.email new-branch-commit@noreply.com
         git config --global user.name new-branch-commit
-    
+
     - name: Add Changes
       run: |
         git add . && git commit -m "New Branch Commit for version $BRANCH_VERSION"
-    
+
     - name: Push commit
       run: |
         git push origin $BRANCH_NAME

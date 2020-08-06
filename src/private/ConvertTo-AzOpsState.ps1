@@ -4,7 +4,7 @@
 .DESCRIPTION
     The cmdlet converts Azure resources (Resources/ResourceGroups/Policy/PolicySet/PolicyAssignments/RoleAssignment/Definition) to the AzOps state format and exports them to the file structure.
     It is normally executed and orchestrated through the Initialize-AzOpsRepository cmdlet. As most of the AzOps-cmdlets, it is dependant on the AzOpsAzManagementGroup and AzOpsSubscriptions variables.
-    $global:AzopsStateConfig with custom json schema are used to determine what properties that should be excluded from different resource types as well as if the json documents should be ordered or not.
+    $global:AzOpsStateConfig with custom json schema are used to determine what properties that should be excluded from different resource types as well as if the json documents should be ordered or not.
 .EXAMPLE
     # Export custom policy definition to the AzOps StatePath
     Initialize-AzOpsGlobalVariables
@@ -30,7 +30,7 @@ function ConvertTo-AzOpsState {
     # The following SuppressMessageAttribute entries are used to surpress
     # PSScriptAnalyzer tests against known exceptions as per:
     # https://github.com/powershell/psscriptanalyzer#suppressing-rules
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzopsStateConfig')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsStateConfig')]
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
     param (
@@ -44,7 +44,10 @@ function ConvertTo-AzOpsState {
         # Used if to return object in pipeline instead of exporting file
         [Parameter(Mandatory = $false)]
         [switch]$ReturnObject,
-        # Used in cases you want to return the template without the custom parameters json schema
+        # Will generalize json templates (only used when generating azopsreference)
+        [Parameter(Mandatory = $false)]
+        [switch]$GeneralizeTemplates,
+        # Export generic templates without embedding them in the parameter block
         [Parameter(Mandatory = $false)]
         [switch]$ExportRawTemplate
     )
@@ -64,7 +67,7 @@ function ConvertTo-AzOpsState {
         $ExcludedProperties = @{}
         # Fetch config json
         try {
-            $ResourceConfig = (Get-Content -Path $global:AzopsStateConfig) | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            $ResourceConfig = (Get-Content -Path $global:AzOpsStateConfig) | ConvertFrom-Json -AsHashtable -ErrorAction Stop
         }
         catch {
             throw "Cannot load $global:AzOpsStateConfig, is the json schema valid or is the variable initialization not run yet?`r`n$_"
@@ -187,7 +190,7 @@ function ConvertTo-AzOpsState {
             }
 
             # Check if Resource has to be generalized
-            if ($global:AzOpsGeneralizeTemplates -eq 1) {
+            if ($GeneralizeTemplates -or $AzOpsGeneralizeTemplates) {
                 # Preserve Original Template before manipulating anything
                 # Only export original resource if generalize excluded properties exist
                 if ("excludedProperties" -in $ResourceConfig.Keys) {
@@ -259,7 +262,7 @@ function ConvertTo-AzOpsState {
                 $object = ConvertTo-AzOpsObject -InputObject $object -OrderObject
             }
 
-            if ($global:AzOpsExportRawTemplate -eq 1 -or $PSBoundParameters["ExportRawTemplate"]) {
+            if ($AzOpsExportRawTemplate -or $ExportRawTemplate) {
                 if ($ReturnObject) {
                     # Return resource as object
                     Write-Output -InputObject $object

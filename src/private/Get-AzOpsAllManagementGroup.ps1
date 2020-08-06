@@ -28,33 +28,35 @@ function Get-AzOpsAllManagementGroup {
     # The following SuppressMessageAttribute entries are used to surpress
     # PSScriptAnalyzer tests against known exceptions as per:
     # https://github.com/powershell/psscriptanalyzer#suppressing-rules
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialRoot')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSupportPartialMgDiscovery')]
+    # [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialRoot')] # No longer used
+    # [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSupportPartialMgDiscovery')] # No longer used
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [ValidateScript( { Get-AzManagementGroup -GroupName $_ } )]
-        $ManagementGroup
+        [string]$GroupName,
+        [Parameter(Mandatory = $false)]
+        [switch]$Recurse
     )
     begin {
 
     }
     process {
-        $MG = Get-AzManagementGroup -GroupName $ManagementGroup -Expand -Recurse
-        if (1 -eq $global:AzOpsSupportPartialMgDiscovery) {
-            if ($MG.ParentId -and -not(Get-AzManagementGroup -GroupName $MG.ParentName -ErrorAction Ignore)) {
-                $global:AzOpsPartialRoot += $MG
-            }
-            if ($MG.Children) {
-                $MG.Children | where-object { $_.Type -eq "/providers/Microsoft.Management/managementGroups" } | Foreach-Object -Process {
-                    Get-AzOpsAllManagementGroup -ManagementGroup $_.Name
+        $MGList = @()
+        # Add Root Management Group as specified by GroupName
+        $MG = Get-AzManagementGroup -GroupName $GroupName -Expand -Recurse
+        $MGList += $MG
+        if ($Recurse) {
+            # if ($MG.ParentId -and -not(Get-AzManagementGroup -GroupName $MG.ParentName -ErrorAction Ignore)) {
+            #     $global:AzOpsPartialRoot += $MG
+            # }
+            foreach ($Child in $MG.Children) {
+                if ($Child.Type -eq  "/providers/Microsoft.Management/managementGroups") {
+                    Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllManagementGroup" -Message "Expanding Management Group: $($Child.Id)"
+                    $MGList += Get-AzOpsAllManagementGroup -GroupName $Child.Name -Recurse
                 }
             }
-            return $MG
         }
-        else {
-            return $MG
-        }
+        return $MGList
     }
     end {
 

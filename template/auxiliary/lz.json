@@ -61,7 +61,7 @@
                 "No"
             ],
             "defaultValue": "No"
-        }        
+        }
     },
     "variables": {
         "scope": "[concat('/providers/Microsoft.Management/managementGroups/', parameters('topLevelManagementGroupPrefix'), '-landingzones')]",
@@ -219,7 +219,7 @@
                 "roleDefinitionId": "[concat('/providers/Microsoft.Authorization/roleDefinitions/', variables('rbacOwner'))]",
                 "principalId": "[if(equals(parameters('enableSqlEncryption'), 'Yes'), toLower(reference(concat('/providers/Microsoft.Authorization/policyAssignments/', variables('policyAssignmentNames').deploySqlEncryption), '2018-05-01', 'Full' ).identity.principalId), 'na')]"
             }
-        },                  
+        },
         {
             "condition": "[equals(parameters('enableStorageHttps'), 'Yes')]",
             "type": "Microsoft.Authorization/policyAssignments",
@@ -230,7 +230,7 @@
                 "description": "Enforce-Secure-Storage",
                 "displayName": "Enforce-Secure-Storage",
                 "policyDefinitionId": "[variables('policyDefinitions').storageHttps]",
-                "scope": "[variables('scope')]"             
+                "scope": "[variables('scope')]"
             }
         },
         {
@@ -258,7 +258,7 @@
                 "policyDefinitionId": "[variables('policyDefinitions').denySubnetWithoutNsg]",
                 "scope": "[variables('scope')]"
             }
-        }        
+        }
     ],
     "outputs": {}
 }

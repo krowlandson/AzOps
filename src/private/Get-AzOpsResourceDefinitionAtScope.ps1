@@ -41,6 +41,7 @@ function Get-AzOpsResourceDefinitionAtScope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSubscriptions')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsThrottleLimit')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsExportRawTemplate')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsGeneralizeTemplates')]
     [CmdletBinding()]
     [OutputType()]
     param (
@@ -250,9 +251,9 @@ function Get-AzOpsResourceDefinitionAtScope {
                             $global:AzOpsStateConfig = $using:global:AzOpsStateConfig
                             $global:AzOpsAzManagementGroup = $using:global:AzOpsAzManagementGroup
                             $global:AzOpsSubscriptions = $using:global:AzOpsSubscriptions
-                            $global:AzOpsExportRawTemplate = $using:Global:AzOpsExportRawTemplate
-                            $global:AzOpsThrottleLimit = $using:Global:AzOpsThrottleLimit
-                            $global:AzOpsGeneralizeTemplates = $using:Global:AzOpsGeneralizeTemplates
+                            $global:AzOpsExportRawTemplate = $using:global:AzOpsExportRawTemplate
+                            $global:AzOpsThrottleLimit = $using:global:AzOpsThrottleLimit
+                            $global:AzOpsGeneralizeTemplates = $using:global:AzOpsGeneralizeTemplates
 
                             $SkipPolicy = $using:SkipPolicy
                             $SkipResourceGroup = $using:SkipResourceGroup

@@ -18,7 +18,7 @@ function Logging {
 }
 
 function Initialization {
-    
+
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '')]
     param ()
 

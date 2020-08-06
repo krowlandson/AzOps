@@ -23,9 +23,8 @@ function Get-AzOpsAllSubscription {
         [string[]]$ExcludedOffers = @('AzurePass_2014-09-01', 'FreeTrial_2014-09-01', 'AAD_2015-09-01'),
         [Parameter(Mandatory = $false)]
         [string[]]$ExcludedStates = @('Disabled', 'Deleted', 'Warned', 'Expired', 'PastDue'),
-        [Parameter(Mandatory = $true)]
-        [ValidateScript( { $_ -in (Get-AzContext).Tenant.Id } )]
-        [guid]$TenantId,
+        [Parameter(Mandatory = $false)]
+        [string]$TenantId,
         [Parameter(Mandatory = $false)]
         [string]$ApiVersion = '2020-01-01'
     )
@@ -40,7 +39,6 @@ function Get-AzOpsAllSubscription {
         # Get all subscriptions in current tenant and and exclude states/offers
 
         $AllSubscriptionsResults = @()
-        $nextLink = $null
         $AllSubscriptionsJson = ((Invoke-AzRestMethod -Path /subscriptions?api-version=$ApiVersion -Method GET).Content | ConvertFrom-Json -Depth 100)
         $AllSubscriptionsResults += $AllSubscriptionsJson.value | Where-Object { $_.tenantId -eq $TenantId }
 
@@ -56,12 +54,12 @@ function Get-AzOpsAllSubscription {
         }
         else {
             # Calculate no of excluded subscriptions
-            [int]$ExcludedSubscriptions = ($AllSubscriptionsResults.count - $IncludedSubscriptions.Count)
+            [int]$ExcludedSubscriptions = ($AllSubscriptionsResults.Count - $IncludedSubscriptions.Count)
             if ($ExcludedSubscriptions -gt 0) {
-                Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Found total [$($AllSubscriptionsResults.count)] subscriptions"
-                Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Excluded [$ExcludedSubscriptions] subscriptions due to state or offer"
+                Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Found total [$($AllSubscriptionsResults.Count)] Subscriptions"
+                Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Excluded [$ExcludedSubscriptions] Subscriptions due to state or offer type"
             }
-            Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Including [$($IncludedSubscriptions.count)] subscriptions"
+            Write-AzOpsLog -Level Verbose -Topic "Get-AzOpsAllSubscription" -Message "Including [$($IncludedSubscriptions.Count)] Subscriptions:`n$($IncludedSubscriptions.foreach({ " --subscriptionId $($_.subscriptionId) ($($_.displayName))" }))"
             # Return object with subscriptions
             return $IncludedSubscriptions
         }

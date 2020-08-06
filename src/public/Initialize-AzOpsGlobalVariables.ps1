@@ -3,31 +3,29 @@
     Initializes the environment and global variables variables required for the AzOps cmdlets.
 .DESCRIPTION
     Initializes the environment and global variables variables required for the AzOps cmdlets.
-    Key / Values in the AzOpsEnvVariables hashtable will be set as environment variables and global variables.
+    Key / Values in the [AzOpsVariables] hashtable will be set as environment variables and global variables.
     All Management Groups and Subscription that the user/service principal have access to will be discovered and added to their respective variables.
 .EXAMPLE
     Initialize-AzOpsGlobalVariables
 .INPUTS
     None
 .OUTPUTS
-    - Global variables and environment variables as defined in @{ $AzOpsEnvVariables }
-    - $global:AzOpsAzManagementGroup as well as $global:AzOpsSubscriptions with all subscriptions and Management Groups that was discovered
+    - Global variables and environment variables as defined in the hashtable [AzOpsVariables]
+    - [AzOpsAzManagementGroup] as well as [AzOpsSubscriptions] with all subscriptions and Management Groups that was discovered
 #>
 
 function Initialize-AzOpsGlobalVariables {
 
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsInvalidateCache')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsAzManagementGroup')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSubscriptions')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialRoot')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsState')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsSupportPartialMgDiscovery')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsPartialMgDiscoveryRoot')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsExcludedSubOffer')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', 'global:AzOpsExcludedSubState')]
     [CmdletBinding()]
     [OutputType()]
     param (
+        [Parameter(Mandatory = $false)]
+        [switch]$InvalidateCache,
+        [Parameter(Mandatory = $false)]
+        [switch]$GeneralizeTemplates,
+        [Parameter(Mandatory = $false)]
+        [switch]$ExportRawTemplate
     )
 
     begin {
@@ -40,72 +38,80 @@ function Initialize-AzOpsGlobalVariables {
             throw
         }
 
-        # Required environment variables hashtable with default values
-        $AzOpsEnvVariables = @{
-            AZOPS_STATE                        = @{ AzOpsState = (Join-Path $pwd -ChildPath "azops") } # Folder to store AzOpsState artefact
-            AZOPS_MAIN_TEMPLATE                = @{ AzOpsMainTemplate = "$PSScriptRoot\..\..\template\template.json" } # Main template json
-            AZOPS_STATE_CONFIG                 = @{ AzOpsStateConfig = "$PSScriptRoot\..\AzOpsStateConfig.json" } # Configuration file for resource serialization
-            AZOPS_ENROLLMENT_PRINCIPAL_NAME    = @{ AzOpsEnrollmentAccountPrincipalName = $null }
-            AZOPS_EXCLUDED_SUB_OFFER           = @{ AzOpsExcludedSubOffer = "AzurePass_2014-09-01,FreeTrial_2014-09-01,AAD_2015-09-01" } # Excluded QuotaIDs as per https://docs.microsoft.com/en-us/azure/cost-management-billing/costs/understand-cost-mgt-data#supported-microsoft-azure-offers
-            AZOPS_EXCLUDED_SUB_STATE           = @{ AzOpsExcludedSubState = "Disabled,Deleted,Warned,Expired,PastDue" } # Excluded subscription states as per https://docs.microsoft.com/en-us/rest/api/resources/subscriptions/list#subscriptionstate
-            AZOPS_OFFER_TYPE                   = @{ AzOpsOfferType = 'MS-AZR-0017P' }
-            AZOPS_DEFAULT_DEPLOYMENT_REGION    = @{ AzOpsDefaultDeploymentRegion = 'northeurope' } # Default deployment region for state deployments (ARM region, not region where a resource is deployed)
-            AZOPS_INVALIDATE_CACHE             = @{ AzOpsInvalidateCache = 1 } # Invalidates cache and ensures that Management Groups and Subscriptions are re-discovered
-            AZOPS_GENERALIZE_TEMPLATES         = @{ AzOpsGeneralizeTemplates = 0 } # Invalidates cache and ensures that Management Groups and Subscriptions are re-discovered
-            AZOPS_EXPORT_RAW_TEMPLATES         = @{ AzOpsExportRawTemplate = 0 }
-            AZOPS_IGNORE_CONTEXT_CHECK         = @{ AzOpsIgnoreContextCheck = 0 } # If set to 1, skip AAD tenant validation == 1
-            AZOPS_THROTTLE_LIMIT               = @{ AzOpsThrottleLimit = 10 } # Throttle limit used in Foreach-Object -Parallel for resource/subscription discovery
-            AZOPS_SUPPORT_PARTIAL_MG_DISCOVERY = @{ AzOpsSupportPartialMgDiscovery = $null } # Enable partial discovery
-            AZOPS_PARTIAL_MG_DISCOVERY_ROOT    = @{ AzOpsPartialMgDiscoveryRoot = $null } # Used in combination with AZOPS_SUPPORT_PARTIAL_MG_DISCOVERY, example value (comma separated, not real array due to env variable constraints) "Contoso,Tailspin,Management"
-            AZOPS_STRICT_MODE                  = @{ AzOpsStrictMode = 0 }
-            AZOPS_SKIP_RESOURCE_GROUP          = @{ AzOpsSkipResourceGroup = 1 }
-            AZOPS_SKIP_POLICY                  = @{ AzOpsSkipPolicy = 0 }
-            GITHUB_API_URL                     = @{ GitHubApiUrl = $null }
-            GITHUB_PULL_REQUEST                = @{ GitHubPullRequest = $null }
-            GITHUB_REPOSITORY                  = @{ GitHubRepository = $null }
-            GITHUB_TOKEN                       = @{ GitHubToken = $null }
-            GITHUB_AUTO_MERGE                  = @{ GitHubAutoMerge = 1 }
-            GITHUB_BRANCH                      = @{ GitHubBranch = $null }
-            GITHUB_COMMENTS                    = @{ GitHubComments = $null }
-            GITHUB_HEAD_REF                    = @{ GitHubHeadRef = $null }
-            GITHUB_BASE_REF                    = @{ GitHubBaseRef = $null }
-        }
-        # Iterate through each variable and take appropriate action
-        foreach ($AzOpsEnv in $AzOpsEnvVariables.Keys) {
-            $EnvVar = "env:\$AzOpsEnv"
-            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Checking environment variable $AzOpsEnv"
-            try {
-                # Check if environment variables already exist with value
-                $EnvVarValue = Get-ChildItem -Path $EnvVar -ErrorAction Stop | Select-Object -ExpandProperty Value
-            }
-            catch [System.Management.Automation.ItemNotFoundException] {
-                # If variable wasn't found, set default value from hash table
-                $AzOpsEnvValue = $AzOpsEnvVariables["$AzOpsEnv"].Values
-                if ($AzOpsEnvValue) {
-                    Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Cannot find $EnvVar, setting value to $AzOpsEnvValue"
-                    Set-Item -Path $EnvVar -Value $AzOpsEnvValue -Force
-                }
-                # Set variable for later use
-                $EnvVarValue = $AzOpsEnvValue
-            }
-            finally {
-                # Set global variables for script
-                $GlobalVar = $AzOpsEnvVariables["$AzOpsEnv"].Keys
-                Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Setting global variable $GlobalVar to $EnvVarValue"
-                # Convert comma separated vars to array (since all env vars are strings)
-                if ($EnvVarValue -match ',') {
-                    $EnvVarValue = $EnvVarValue -split ','
-                }
-                Set-Variable -Name $GlobalVar -Scope Global -Value $EnvvarValue
-            }
+        # Ensure that registry value for long path support in windows has been set
+        Test-AzOpsRuntime
+
+        # Set current $TenantId value from $AllAzContext
+        $TenantId = $AllAzContext.Tenant.Id
+
+        # Hashtable containing map of environment to global variables for AzOps, with default values
+        # Values need to be [PsCustomObject] to allow correct setting of types (important when setting $null)
+        $AzOpsVariables = [hashtable]@{
+            AZOPS_STATE                     = [PsCustomObject]@{ AzOpsState = (Join-Path $(Get-Location) -ChildPath "azops") } # Folder to store AzOpsState artefact
+            AZOPS_MAIN_TEMPLATE             = [PsCustomObject]@{ AzOpsMainTemplate = "$PSScriptRoot\..\..\template\template.json" } # Main template json
+            AZOPS_STATE_CONFIG              = [PsCustomObject]@{ AzOpsStateConfig = "$PSScriptRoot\..\AzOpsStateConfig.json" } # Configuration file for resource serialization
+            AZOPS_ENROLLMENT_PRINCIPAL_NAME = [PsCustomObject]@{ AzOpsEnrollmentAccountPrincipalName = $null }
+            AZOPS_EXCLUDED_SUB_OFFER        = [PsCustomObject]@{ AzOpsExcludedSubOffer = "AzurePass_2014-09-01,FreeTrial_2014-09-01,AAD_2015-09-01" } # Excluded QuotaIDs as per https://docs.microsoft.com/en-us/azure/cost-management-billing/costs/understand-cost-mgt-data#supported-microsoft-azure-offers
+            AZOPS_EXCLUDED_SUB_STATE        = [PsCustomObject]@{ AzOpsExcludedSubState = "Disabled,Deleted,Warned,Expired,PastDue" } # Excluded subscription states as per https://docs.microsoft.com/en-us/rest/api/resources/subscriptions/list#subscriptionstate
+            AZOPS_OFFER_TYPE                = [PsCustomObject]@{ AzOpsOfferType = "MS-AZR-0017P" }
+            AZOPS_DEFAULT_DEPLOYMENT_REGION = [PsCustomObject]@{ AzOpsDefaultDeploymentRegion = "northeurope" } # Default deployment region for state deployments (ARM region, not region where a resource is deployed)
+            AZOPS_INVALIDATE_CACHE          = [PsCustomObject]@{ AzOpsInvalidateCache = if ($InvalidateCache) { $true } else { $false } } # Invalidates cache and ensures that Management Groups and Subscriptions are re-discovered
+            AZOPS_GENERALIZE_TEMPLATES      = [PsCustomObject]@{ AzOpsGeneralizeTemplates = if ($GeneralizeTemplates) { $true } else { $false } } # Will generalize JSON templates (only used when generating azopsreference)
+            AZOPS_EXPORT_RAW_TEMPLATES      = [PsCustomObject]@{ AzOpsExportRawTemplate = if ($ExportRawTemplate) { $true } else { $false } } # Export generic templates without embedding them in the parameter block
+            AZOPS_IGNORE_CONTEXT_CHECK      = [PsCustomObject]@{ AzOpsIgnoreContextCheck = 0 } # If set to 1, skip AAD tenant validation == 1
+            AZOPS_THROTTLE_LIMIT            = [PsCustomObject]@{ AzOpsThrottleLimit = 10 } # Throttle limit used in Foreach-Object -Parallel for resource/subscription discovery
+            AZOPS_PARTIAL_MG_DISCOVERY_ROOT = [PsCustomObject]@{ AzOpsPartialMgDiscoveryRoot = $null } # Specify the Management Group to use as root by Name (not DisplayName), e.g. "contoso"
+            AZOPS_STRICT_MODE               = [PsCustomObject]@{ AzOpsStrictMode = 0 }
+            AZOPS_SKIP_RESOURCE_GROUP       = [PsCustomObject]@{ AzOpsSkipResourceGroup = 1 }
+            AZOPS_SKIP_POLICY               = [PsCustomObject]@{ AzOpsSkipPolicy = 0 }
+            AZOPS_LOG_TIMESTAMP_PREFERENCE  = [PsCustomObject]@{ AzOpsLogTimestampPreference = $false }
+            GITHUB_API_URL                  = [PsCustomObject]@{ GitHubApiUrl = $null }
+            GITHUB_PULL_REQUEST             = [PsCustomObject]@{ GitHubPullRequest = $null }
+            GITHUB_REPOSITORY               = [PsCustomObject]@{ GitHubRepository = $null }
+            GITHUB_TOKEN                    = [PsCustomObject]@{ GitHubToken = $null }
+            GITHUB_AUTO_MERGE               = [PsCustomObject]@{ GitHubAutoMerge = 1 }
+            GITHUB_BRANCH                   = [PsCustomObject]@{ GitHubBranch = $null }
+            GITHUB_COMMENTS                 = [PsCustomObject]@{ GitHubComments = $null }
+            GITHUB_HEAD_REF                 = [PsCustomObject]@{ GitHubHeadRef = $null }
+            GITHUB_BASE_REF                 = [PsCustomObject]@{ GitHubBaseRef = $null }
         }
 
-        # Create AzOpsState folder if not exists
-        if (-not (Test-Path -Path $global:AzOpsState)) {
-            New-Item -path $global:AzOpsState -Force -Type directory | Out-Null
+    }
+
+    process {
+        Write-AzOpsLog -Level Debug -Topic "Initialize-AzOpsGlobalVariables" -Message ("Initiating function " + $MyInvocation.MyCommand + " process")
+
+        # Iterate through each key:value pair in AzOpsVariables to create global variables using local environment variables to override if present
+        Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message ("Setting AzOps Global Variables using environment variables or default values.")
+        foreach ($Key in $AzOpsVariables.Keys | Sort-Object) {
+            $EnvVarName = "env:\$Key"
+            $AzOpsVariableName = $($AzOpsVariables.$Key.psobject.properties.name)
+            if (Test-Path -Path $EnvVarName) {
+                $EnvVarStatus = "FOUND"
+                $AzOpsVariableSource = "Environment Variable"
+                $AzOpsVariableValue = Get-ChildItem -Path $EnvVarName | Select-Object -ExpandProperty Value
+            }
+            else {
+                $EnvVarStatus = "NOT FOUND"
+                $AzOpsVariableSource = "Default Value"
+                $AzOpsVariableValue = $AzOpsVariables.$Key.$AzOpsVariableName
+            }
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Environment variable [$EnvVarName] ($EnvVarStatus)"
+            if ($AzOpsVariableValue -match ',') {
+                $AzOpsVariableValue = $AzOpsVariableValue -split ','
+            }
+            elseif ($AzOpsVariableValue -ieq "True") {
+                $AzOpsVariableValue = $true
+            }
+            elseif ($AzOpsVariableValue -ieq "False") {
+                $AzOpsVariableValue = $false
+            }
+            Set-Variable -Name $AzOpsVariableName -Scope Global -Value $AzOpsVariableValue
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Set [`$global:$AzOpsVariableName] using $($AzOpsVariableSource): $AzOpsVariableValue"
         }
 
         # Validate number of AAD Tenants that the principal has access to.
+        # Needs to run after processing AzOpsVariables due to AzOpsIgnoreContextCheck
         if (0 -eq $AzOpsIgnoreContextCheck) {
             $AzContextTenants = @($AllAzContext.Tenant.Id | Sort-Object -Unique)
             if ($AzContextTenants.Count -gt 1) {
@@ -114,64 +120,42 @@ function Initialize-AzOpsGlobalVariables {
                 Please reconnect with Connect-AzAccount using an account/service principal that only have access to one tenant"
                 break
             }
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Found Tenant Id in current context: $($AllAzContext.Tenant.Id)"
         }
-        # Ensure that registry value for long path support in windows has been set
-        Test-AzOpsRuntime
 
-    }
-
-    process {
-        Write-AzOpsLog -Level Debug -Topic "Initialize-AzOpsGlobalVariables" -Message ("Initiating function " + $MyInvocation.MyCommand + " process")
-
-        # Get all subscriptions and Management Groups if InvalidateCache is set to 1 or if the variables are not set
-        if ($global:AzOpsInvalidateCache -eq 1 -or $global:AzOpsAzManagementGroup.count -eq 0 -or $global:AzOpsSubscriptions.Count -eq 0) {
-            #Get current tenant id
-            $TenantId = (Get-AzContext).Tenant.Id
-            # Set root scope variable basd on tenantid to be able to validate tenant root access if partial discovery is not enabled
-            $RootScope = '/providers/Microsoft.Management/managementGroups/{0}' -f $TenantId
+        # Set AzOpsSubscriptions if InvalidateCache is set to true or variable not set
+        # Need to use Get-Variable and Set-Variable to avoid error evaluating non-existing variable
+        if (($InvalidateCache) -or ($AzOpsInvalidateCache) -or (-not (Get-Variable -Name AzOpsSubscriptions -Scope Global -ErrorAction Ignore))) {
             # Initialize global variable for subscriptions - get all subscriptions in Tenant
-            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Initializing Global Variable AzOpsSubscriptions"
-            $global:AzOpsSubscriptions = Get-AzOpsAllSubscription -ExcludedOffers $global:AzOpsExcludedSubOffer -ExcludedStates $global:AzOpsExcludedSubState -TenantId $TenantId
-            # Initialize global variable for Management Groups
-            $global:AzOpsAzManagementGroup = @()
-            # Initialize global variable for partial root discovery that will be set in AzOpsAllManagementGroup
-            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Global Variable AzOpsState or AzOpsAzManagementGroup is not Initialized. Initializing it now"
-            # Get all managementgroups that principal has access to
-            $global:AzOpsPartialRoot = @()
-            # Initialize global variable for Management Groups
-            $global:AzOpsAzManagementGroup = @()
-
-            $managementGroups = (Get-AzManagementGroup -ErrorAction:Stop)
-            if ($RootScope -in ($managementGroups | Select-Object -Property Id).Id -or 1 -eq $global:AzOpsSupportPartialMgDiscovery) {
-                # Handle user provided management groups
-                if (1 -eq $global:AzOpsSupportPartialMgDiscovery -and $global:AzOpsPartialMgDiscoveryRoot) {
-                    $ManagementGroups = @()
-                    Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Processing user provided root management groups"
-                    $global:AzOpsPartialMgDiscoveryRoot -split ',' | ForEach-Object -Process {
-                        # Add for recursive discovery
-                        $ManagementGroups += [pscustomobject]@{ Name = $_ }
-                        # Add user provided root to partial root variable to know where discovery should start
-                        $global:AzOpsPartialRoot += Get-AzManagementGroup -GroupName $_ -Recurse -Expand
-                    }
-                }
-                Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Total Count of Management Group: $(($managementGroups | Measure-Object).Count)"
-                foreach ($mgmtGroup in $managementGroups) {
-                    Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Expanding Management Group : $($mgmtGroup.Name)"
-                    $global:AzOpsAzManagementGroup += Get-AzOpsAllManagementGroup -ManagementGroup $mgmtGroup.Name
-                }
-                $global:AzOpsAzManagementGroup = $global:AzOpsAzManagementGroup | Sort-Object -Property Id -Unique
-
-                Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Global Variable AzOpsState or AzOpsAzManagementGroup is initialized"
-
-            }
-            else {
-                Write-AzOpsLog -Level Error -Topic "Initialize-AzOpsGlobalVariables" -Message "Cannot access root management group $RootScope. Verify that principal $((Get-AzContext).Account.Id) have access or set env:AZOPS_SUPPORT_PARTIAL_MG_DISCOVERY to 1 for partial discovery support."
-            }
-
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Initializing Global Variable [AzOpsSubscriptions]"
+            Get-AzOpsAllSubscription -ExcludedOffers $AzOpsExcludedSubOffer -ExcludedStates $AzOpsExcludedSubState -TenantId $TenantId `
+            | Set-Variable -Name AzOpsSubscriptions -Scope Global
         }
         else {
-            # If InvalidateCache was is not set to 1 and $global:AzOpsAzManagementGroup and $global:AzOpsSubscriptions set, use cached information
-            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Using cached values for AzOpsAzManagementGroup and AzOpsSubscriptions"
+            # If InvalidateCache is not set to 1 and $global:AzOpsSubscriptions set, use cached information
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Using cached values for [AzOpsSubscriptions]"
+        }
+
+        # Set AzOpsAzManagementGroup if InvalidateCache is set to true or variable not set
+        # Need to use Get-Variable and Set-Variable to avoid error evaluating non-existing variable
+        if (($InvalidateCache) -or ($AzOpsInvalidateCache) -or (-not (Get-Variable -Name AzOpsAzManagementGroup -Scope Global -ErrorAction Ignore))) {
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Initializing Global Variable [AzOpsAzManagementGroup]"
+            # Set root scope variable using AzOpsPartialMgDiscoveryRoot if provided, otherwise default to "Tenant Root Group" by using TenantId
+            if ($global:AzOpsPartialMgDiscoveryRoot) {
+                $RootMgName = $global:AzOpsPartialMgDiscoveryRoot
+                $RootMgMessage = "user-specified Management Group: $RootMgName"
+            }
+            else {
+                $RootMgName = $TenantId
+                $RootMgMessage = "`"Tenant Root Group`" Management Group: $RootMgName"
+            }
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Starting discovery from $RootMgMessage"
+            Get-AzOpsAllManagementGroup -GroupName $RootMgName -Recurse `
+            | Set-Variable -Name AzOpsAzManagementGroup -Scope Global
+        }
+        else {
+            # If InvalidateCache is not set to 1 and $global:AzOpsAzManagementGroup set, use cached information
+            Write-AzOpsLog -Level Verbose -Topic "Initialize-AzOpsGlobalVariables" -Message "Using cached values for [AzOpsAzManagementGroup]"
         }
 
     }
