@@ -190,7 +190,8 @@ function ConvertTo-AzOpsState {
             }
 
             # Check if Resource has to be generalized
-            if ($GeneralizeTemplates -or $AzOpsGeneralizeTemplates) {
+            if ($GeneralizeTemplates.IsPresent -or $AzOpsGeneralizeTemplates) {
+                Write-AzOpsLog -Level Verbose -Topic "ConvertTo-AzOpsState" -Message "GeneralizeTemplates flag used"
                 # Preserve Original Template before manipulating anything
                 # Only export original resource if generalize excluded properties exist
                 if ("excludedProperties" -in $ResourceConfig.Keys) {
@@ -262,7 +263,8 @@ function ConvertTo-AzOpsState {
                 $object = ConvertTo-AzOpsObject -InputObject $object -OrderObject
             }
 
-            if ($AzOpsExportRawTemplate -or $ExportRawTemplate) {
+            if ($ExportRawTemplate.IsPresent -or $AzOpsExportRawTemplate) {
+                Write-AzOpsLog -Level Verbose -Topic "ConvertTo-AzOpsState" -Message "ExportRawTemplate flag used"
                 if ($ReturnObject) {
                     # Return resource as object
                     Write-Output -InputObject $object
